@@ -1,0 +1,333 @@
+---
+title: "Analysis report"
+subtitle: 'Supplement to "Efficacy of surgery and bronchoscopic resection in adult patients with resectable pulmonary typical carcinoid tumours"'
+author: "Andrés Obeso"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_html: default
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: skeleton.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+library(tufte)
+library(databrew)
+# invalidate cache when the tufte version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tufte'))
+options(htmltools.dir.version = FALSE)
+
+library(knitr)
+# Basic knitr options
+opts_chunk$set(comment = NA, 
+               echo = FALSE, 
+               warning = FALSE, 
+               message = FALSE, 
+               error = TRUE, 
+               cache = F,
+               fig.width = 7,
+               fig.height = 6)
+knit_engines$set(asis = function(options) {
+  if (options$echo && options$eval) knit_child(text = options$code)
+})
+
+```
+
+# Summary
+
+This report summarizes (in both code and text) the analysis carried out for "Efficacy of surgery and bronchoscopic resection in adult patients with resectable pulmonary typical carcinoid tumours: a systematic review." All code is available online.^[http://www.github.com/joebrew/andresobeso]
+
+
+# Data processing
+
+Prior to analysis, data from the excel spreadsheet (`data/Tabla excel analisis.xlsx`) are read in and processed to a "tidy" format [@tidy] using the script `global.R`.
+
+```{r}
+source('global.R')
+```
+
+# Dava visualization
+
+## Periop complications over time
+
+```{r}
+ggplot(data = df,
+       aes(x = `Follow up (months)`,
+           y = `Periop complications (%)`,
+           color = Group)) +
+  geom_point(aes(size = N)) + 
+  theme_databrew()
+```
+
+## Postoperative mortality (0%) over time
+
+```{r}
+ggplot(data = df,
+       aes(x = `Follow up (months)`,
+           y = `Postoperative mortality (0%)`,
+           color = Group)) +
+  geom_point(aes(size = N)) + 
+  theme_databrew()
+```
+
+## Complete resection (%) over time
+
+```{r}
+ggplot(data = df,
+       aes(x = `Follow up (months)`,
+           y = `Complete resection (%)`,
+           color = Group)) +
+  geom_point(aes(size = N)) + 
+  theme_databrew()
+```
+
+## Residual disease (%) over time
+
+```{r}
+ggplot(data = df,
+       aes(x = `Follow up (months)`,
+           y = `Residual disease (%)`,
+           color = Group)) +
+  geom_point(aes(size = N)) + 
+  theme_databrew()
+```
+
+## Recurrence (%) over time
+
+```{r}
+ggplot(data = df,
+       aes(x = `Follow up (months)`,
+           y = `Recurrence (%)`,
+           color = Group)) +
+  geom_point(aes(size = N)) + 
+  geom_smooth() +
+  theme_databrew()
+```
+
+## Long term success rate
+
+```{r}
+ggplot(data = df,
+       aes(x = `Group`,
+           y = `Long term success rate`,
+           color = Group)) +
+  geom_violin(alpha = 0.8) +
+  geom_jitter(aes(size = N), alpha = 0.8) + 
+  theme_databrew()
+```
+
+## 5 year survival rate
+
+```{r}
+ggplot(data = df,
+       aes(x = `Group`,
+           y = `5 year survival`,
+           color = Group)) +
+  geom_violin(alpha = 0.8) +
+  geom_jitter(aes(size = N), alpha = 0.8) + 
+  theme_databrew()
+```
+
+## 10 year survival rate
+
+```{r}
+ggplot(data = df,
+       aes(x = `Group`,
+           y = `10 year survival`,
+           color = Group)) +
+  geom_violin(alpha = 0.8) +
+  geom_jitter(aes(size = N), alpha = 0.8) + 
+  theme_databrew()
+```
+
+## Long term success rate by sex
+
+```{r}
+ggplot(data = df,
+       aes(x = `Male (%)`,
+           y = `Long term success rate`)) +
+  geom_smooth(alpha = 0.8) + 
+  geom_point(alpha = 0.8) +
+  theme_databrew()
+```
+
+
+## Long term success rate by age
+
+```{r}
+ggplot(data = df,
+       aes(x = `Age (yr)`,
+           y = `Long term success rate`)) +
+  geom_smooth(alpha = 0.8) + 
+  geom_point(alpha = 0.8) +
+  theme_databrew()
+```
+
+
+# Models
+
+Are there statistically significant differences in the following outcome measures, as a function of the intervention type:
+Complete Resection, Residual Disease, Recurrence rate, Long tern successful rate and Survival
+
+## Methods for modeling
+
+Simple ordinary least squares, weighted by `N` (sample size), and adjusted for Age, Sex, and months followed up. Formulaically:
+
+```
+<outcome> ~ (Group + `Age (yr)` + `Male (%)` + `Follow up (months)`) * `N`
+```
+
+The results are both tabular and graphical. In both, the "reference" group is Surgery (ie, the value shown is for Bronchoscopy). A p-value of less than 0.05, or a chart with the vertical uncertainty line not crossing the 0 line, is considered statistically significant. For survival outcomes, follow up months was removed from the right hand side of the equation.
+
+We use the below R code to generate a model and plot for each outcome variable.
+
+```{r, echo = TRUE}
+# Define function for model
+model <- function(outcome,
+                  data){
+  data$Group <- factor(data$Group, levels = c('Surgery', 'Bronchoscopy'))
+  if(grepl('urvival', outcome)){
+    the_formula <- paste0('`', outcome, '` ~ Group +',  '`Age (yr)` + `Male (%)`')
+  } else {
+    the_formula <- paste0('`', outcome, '` ~ Group +',  '`Age (yr)` + `Male (%)` + `Follow up (months)`')
+  }
+  
+  the_formula <- as.formula(the_formula)
+  fit <- lm(the_formula, weights = data$N, data = data)
+  ci <- confint(fit)
+  coefs <- coef(fit)
+  out <-data.frame(coef = names(coefs), coefs, ci)
+  out$coef <- gsub('Group', '', out$coef)
+  row.names(out) <- NULL
+  names(out) <- c('Variable', 'Coefficient', 'Lower', 'Upper')
+  out$`P Value` <- summary(fit)$coefficients[,4]
+  out_list <- list()
+  out_list[[1]] <- out
+  g <- ggplot(data = out %>%
+                filter(Variable != '(Intercept)'),
+              aes(x = Variable,
+                  y = Coefficient)) +
+    geom_point(color = 'red', alpha = 0.7) +
+    geom_linerange(aes(x = Variable,
+                       ymax = Upper,
+                       ymin = Lower),
+                   alpha = 0.7) +
+    geom_hline(yintercept = 0, alpha = 0.7, lty = 2) +
+    theme_databrew() +
+    labs(title = '')
+  out_list[[2]] <- g
+  names(out_list) <- c('data', 'plot')
+  return(out_list)
+}
+```
+
+## Complete Resection
+
+```{r}
+x <- model(outcome = 'Complete resection (%)',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+
+## Residual disease (%)
+
+```{r}
+x <- model(outcome = 'Residual disease (%)',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+## Recurrence (%)
+
+```{r}
+x <- model(outcome = 'Recurrence (%)',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+
+## Long term success rate
+
+```{r}
+x <- model(outcome = 'Long term success rate',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+## 5 year survival
+
+```{r}
+x <- model(outcome = '5 year survival',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+## 10 year survival
+
+```{r}
+x <- model(outcome = '10 year survival',
+           data = df)
+```
+
+```{r, results = 'asis'}
+knitr::kable(x$data)
+```
+
+```{r}
+x$plot
+```
+
+
+```{r eval=FALSE}
+file.edit(
+  tufte:::template_resources(
+    'tufte_html', '..', 'skeleton', 'skeleton.Rmd'
+  )
+)
+```
+
+```{r bib, include=FALSE}
+# create a bib file for the R packages used in this document
+# knitr::write_bib(c('base', 'rmarkdown'), file = 'skeleton.bib')
+```
